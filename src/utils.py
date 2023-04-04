@@ -47,7 +47,7 @@ def ctc2duration(phones,resolution=0.01):
     return merged
 
 
-def seq2duration(phones,resolution=0.01):
+def seq2duration(phones,resolution=0.01,min_duration=0):
     """
     xxxxx convert phone sequence to duration
 
@@ -69,7 +69,18 @@ def seq2duration(phones,resolution=0.01):
     out = []
     for p,group in groupby(phones):
         length = len(list(group))
-        out.append((round(counter*resolution,2),round((counter+length)*resolution,2),p))
+        if length >= min_duration: 
+            if len(out) > 0 and p == "[SIL]" and out[-1][2] == "[SIL]":
+                replaced = (out[-1][0], round((counter+length)*resolution,2),out[-1][2])
+                out[-1] = replaced
+            else:
+                out.append((round(counter*resolution,2),round((counter+length)*resolution,2),p))
+            
+        elif len(out) == 0:
+            out.append((round(counter*resolution,2),round((counter+length)*resolution,2),"[SIL]"))
+        else:
+            replaced = (out[-1][0], round((counter+length)*resolution,2),out[-1][2])
+            out[-1] = replaced
         counter += length
     return out
 

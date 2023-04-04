@@ -88,11 +88,9 @@ class CharsiuPreprocessor:
 
         '''
         if type(audio)==str:
-            if sr == 16000:    
-                features,fs = sf.read(audio)
-                assert fs == 16000
-            else:
-                features, _ = librosa.core.load(audio,sr=sr)
+            features, sr = librosa.core.load(audio,sr=16000)
+            assert sr == 16000
+            
         elif isinstance(audio, np.ndarray):
             features = audio
         else:
@@ -112,8 +110,7 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
         self.g2p = G2p()
         self.sil = '[SIL]'
         self.sil_idx = self.mapping_phone2id(self.sil)
-#        self.punctuation = set('.,!?')
-        self.punctuation = set()        
+        self.punctuation = set('.,!?')
 
     def get_phones_and_words(self,sen):
         '''
@@ -138,7 +135,6 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
         
         phones = self.g2p(sen)
         words = self._get_words(sen)
-    
         phones = list(tuple(g) for k,g in groupby(phones, key=lambda x: x != ' ') if k)  
         
         aligned_phones = []
@@ -147,12 +143,10 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
             if re.search(r'\w+\d?',p[0]):
                 aligned_phones.append(p)
                 aligned_words.append(w)
-            elif p in self.punctuation:
-                aligned_phones.append((self.sil,))
-                aligned_words.append(self.sil)
-        
+            elif p[0] in self.punctuation:
+                aligned_phones.append((p[0],))
+                aligned_words.append((p[0]))
         assert len(aligned_words) == len(aligned_phones)
-        
         return aligned_phones, aligned_words
         
         assert len(words) == len(phones)
@@ -228,26 +222,40 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
         words_rep = [w for ph,w in zip(phones,words) for p in ph]
         phones_rep = [re.sub(r'\d','',p) for ph,w in zip(phones,words) for p in ph]
         assert len(words_rep)==len(phones_rep)
-        
+
         # match each phone to its word
         word_dur = []
         count = 0
+
+        phones_with_punctuation = []
+
         for dur in preds:
+            print(words_rep[count])
             if dur[-1] == '[SIL]':
                 word_dur.append((dur,'[SIL]'))
+                phones_with_punctuation.append(dur)
+            elif dur[-1] == "[UNK]":
+                if phones_rep[count+1] in self.punctuation:
+                    dur = (dur[0], dur[1], phones_rep[count+1])
+                    word_dur.append((dur,phones_rep[count+1]))
+                    phones_with_punctuation.append(dur)
+                    count += 1
+                else:
+                    raise Exception(f"{phones_rep[count+1]} not punctuation")
             else:
                 while dur[-1] != phones_rep[count]:
                     count += 1
-                word_dur.append((dur,words_rep[count])) #((start,end,phone),word)
     
+                phones_with_punctuation.append(dur)
+                word_dur.append((dur,words_rep[count])) #((start,end,phone),word)
         # merge phone-to-word alignment to derive word duration
         words = []
         for key, group in groupby(word_dur, lambda x: x[-1]):
             group = list(group)
             entry = (group[0][0][0],group[-1][0][1],key)
             words.append(entry)
-            
-        return words
+           
+        return words, phones_with_punctuation
 
 
 '''
@@ -264,8 +272,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         self.g2p = G2pM()
         self.sil = "[SIL]"
         self.sil_idx = self.mapping_phone2id(self.sil)
-        #self.punctuation = set('.,!?。，！？、')
-        self.punctuation = set()  
+        self.punctuation = set('.,!?。，！？、')
         # Pinyin tables
         self.consonant_list = set(['b', 'p', 'm', 'f', 'd', 't', 'n', 'l', 'g', 'k',
                   'h', 'j', 'q', 'x', 'zh', 'ch', 'sh', 'r', 'z',
@@ -325,10 +332,10 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
             if re.search(r'\w+:?\d',p):
                 aligned_phones.append(self._separate_syllable(self.transform_dict.get(p[:-1],p[:-1])+p[-1]))
                 aligned_words.append(w)
-            elif p in self.punctuation:
-                aligned_phones.append((self.sil,))
-                aligned_words.append(self.sil)
-                
+            elif p[0] in self.punctuation:
+                aligned_phones.append((p[0],))
+                aligned_words.append((p[0]))
+
         assert len(aligned_phones)==len(aligned_words)
         return aligned_phones, aligned_words
 
@@ -395,36 +402,44 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         else:
             #return (syllable.encode('utf-8'),)
             return (syllable,)
-        
-        
+ 
     def align_words(self, preds, phones, words):
-    
         words_rep = [w+str(i) for i,(ph,w) in enumerate(zip(phones,words)) for p in ph]
-        phones_rep = [p for ph,w in zip(phones,words) for p in ph]
+        phones_rep = [p for ph,w in zip(phones,words) for p in ph]   
         assert len(words_rep)==len(phones_rep)
-        
+
         # match each phone to its word
         word_dur = []
         count = 0
+
+        phones_with_punctuation = []
         for dur in preds:
             if dur[-1] == '[SIL]':
                 word_dur.append((dur,'[SIL]'))
+                phones_with_punctuation.append(dur)
+            elif dur[-1] == "[UNK]":
+                if phones_rep[count+1] in self.punctuation:
+                    dur = (dur[0], dur[1], phones_rep[count+1])
+                    word_dur.append((dur,phones_rep[count+1]))
+                    phones_with_punctuation.append(dur)
+                    count += 1
+                else:
+                    raise Exception(f"{phones_rep[count+1]} not punctuation")
             else:
                 while dur[-1] != phones_rep[count]:
                     count += 1
-                    if count >= len(phones_rep):
-                        break
-                word_dur.append((dur,words_rep[count])) #((start,end,phone),word)
     
+                phones_with_punctuation.append(dur)
+                word_dur.append((dur,words_rep[count])) #((start,end,phone),word)
         # merge phone-to-word alignment to derive word duration
         words = []
         for key, group in groupby(word_dur, lambda x: x[-1]):
             group = list(group)
-            entry = (group[0][0][0],group[-1][0][1],re.sub(r'\d','',key))
+            entry = (group[0][0][0],group[-1][0][1],key)
             words.append(entry)
-            
-        return words
-
+           
+        return words, phones_with_punctuation       
+        
 
 
 if __name__ == '__main__':

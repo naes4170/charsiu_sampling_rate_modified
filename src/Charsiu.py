@@ -137,6 +137,7 @@ class charsiu_forced_aligner(charsiu_aligner):
 
         with torch.no_grad():
             out = self.aligner(audio)
+        out.logits[:,self.charsiu_processor.sil_idx] *= 0.1
         cost = torch.softmax(out.logits,dim=-1).detach().cpu().numpy().squeeze()
           
         
@@ -154,7 +155,7 @@ class charsiu_forced_aligner(charsiu_aligner):
         
         pred_phones = seq2duration(pred_phones,resolution=self.resolution)
         
-        pred_words = self.charsiu_processor.align_words(pred_phones,phones,words)
+        pred_words, pred_phones = self.charsiu_processor.align_words(pred_phones,phones,words)
         return pred_phones, pred_words
     
     
@@ -217,12 +218,25 @@ class charsiu_forced_aligner(charsiu_aligner):
         # merge silent and non-silent intervals
         pred_phones = []
         count = 0
+        sil_frames = 0
         for i in sil_mask:
             if i==self.charsiu_processor.sil_idx:
-                pred_phones.append('[SIL]')
+                if len(pred_phones) == 0:
+                    pred_phones += ['[SIL]']
+                else:
+                    sil_frames += 1
             else:
+                if sil_frames > 0:
+                    if pred_phones[-1] != aligned_phones[count]:
+                        pred_phones += ['[SIL]'] * sil_frames
+                    else:
+                        pred_phones += [ pred_phones[-1] ] * sil_frames
+                    sil_frames = 0
+
                 pred_phones.append(aligned_phones[count])
                 count += 1
+        if sil_frames > 0:
+            pred_phones += ['[SIL]'] * sil_frames
         assert len(pred_phones) == len(sil_mask)
         return pred_phones
 
@@ -241,7 +255,7 @@ class charsiu_forced_aligner(charsiu_aligner):
                 sil_mask += group
 
         return np.array(sil_mask)
-    
+
 
 class charsiu_attention_aligner(charsiu_aligner):
     
