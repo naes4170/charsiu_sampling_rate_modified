@@ -133,13 +133,14 @@ class charsiu_forced_aligner(charsiu_aligner):
         audio = self.charsiu_processor.audio_preprocess(audio,sr=self.sr)
         audio = torch.Tensor(audio).unsqueeze(0).to(self.device)
         phones, words = self.charsiu_processor.get_phones_and_words(text)
+        
         phone_ids = self.charsiu_processor.get_phone_ids(phones)
 
+        print(f"phones {phones} words {words}")
         with torch.no_grad():
             out = self.aligner(audio)
         out.logits[:,self.charsiu_processor.sil_idx] *= 0.1
         cost = torch.softmax(out.logits,dim=-1).detach().cpu().numpy().squeeze()
-          
         
         sil_mask = self._get_sil_mask(cost)
         
@@ -150,11 +151,10 @@ class charsiu_forced_aligner(charsiu_aligner):
         aligned_phone_ids = forced_align(cost[nonsil_idx,:],phone_ids[1:-1])
         
         aligned_phones = [self.charsiu_processor.mapping_id2phone(phone_ids[1:-1][i]) for i in aligned_phone_ids]
-        
         pred_phones = self._merge_silence(aligned_phones,sil_mask)
         
         pred_phones = seq2duration(pred_phones,resolution=self.resolution)
-        
+        print(pred_phones) 
         pred_words, pred_phones = self.charsiu_processor.align_words(pred_phones,phones,words)
         return pred_phones, pred_words
     
