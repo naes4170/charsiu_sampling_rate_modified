@@ -386,7 +386,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
 
         """
         
-        assert syllable[-1].isdigit()
+        assert syllable[-1].isdigit(), f"Expected numeric tone for {syllable}"
         if syllable == 'ri4':
             return ('r','iii4')
         if syllable[:-1] == 'ueng' or syllable[:-1] == 'io':
