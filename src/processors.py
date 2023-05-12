@@ -230,9 +230,6 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
 
         # words is a list of strings, where each string is a single word in the original sentence (in Chinese, this is either a single character or punctuation)
         # phones is a list of tuples, where each tuple contains the phones for the word at the respective index 
-        print(f"preds {preds}")
-        print(f"words {words}")
-        print(f"phones {phones}")
         word_durations = []
         phone_durations = []
         # this is a pointer to the current word/phones tuple
@@ -261,7 +258,6 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
             else:
                 word_phone_durations = []
                 for word_phone in phones[word_idx]: 
-                    print(f"Matching {preds[preds_idx]} to current word {words[word_idx]} phone [{word_phone}]")
                     if preds[preds_idx][-1] in ["[UNK]", "[SIL]"]:
                         raise Exception()
 
@@ -283,7 +279,6 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
                 word_durations.append([word_start, word_end, words[word_idx]])       
 
                 word_idx += 1
-        print(f"word_durations {word_durations} phone_durations {phone_durations} len preds {len(preds)} preds {preds}")
         # when we encounter punctuation followed by [SIL], we just fold the length of the silence into the punctuation phone
         return word_durations, phone_durations       
 
@@ -375,7 +370,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                         aligned_phones.append((char,))
                         aligned_words.append((char))
                     else:
-                        print(f"Ignoring char {p}")
+                        print(f"Ignoring char {char}")
                     word_idx += 1
         assert len(aligned_phones)==len(aligned_words)
         return aligned_phones, aligned_words
@@ -445,6 +440,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
             return (syllable,)
  
     def align_words(self, preds, phones, words):
+
         # preds is a list of tuples, where each tuple is a phone alignment (start, end, phone)
         # > preds
         # [(0.0, 0.1, '[SIL]'), (0.1, 0.26, 'q'), (0.26, 0.37, 'ing3'), (0.37, 0.57, 'sh'), (0.57, 0.99, 'uo1'), (0.99, 1.0, '[UNK]'), (1.0, 1.13, '[SIL]'), (1.13, 1.24, 'n'), (1.24, 1.25, 'i3'), (1.25, 1.41, 'h'), (1.41, 1.62, 'ao3'), (1.62, 1.64, '[UNK]'), (1.64, 2.45, '[SIL]')]
@@ -455,48 +451,128 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # phones is a list of tuples, where each tuple contains the phones for the word at the respective index 
         # >> phones 
         # [('q', 'ing3'), ('sh', 'uo1'), ('“',), ('n', 'i3'), ('h', 'ao3'), ('”',), ('。',)] 
-
         word_durations = []
         phone_durations = []
-        # this is a pointer to the current position within preds
-        i = 0
-        # we need to iterate over the words/phones to match to their respective phone alignments and:
-        # 1) replace SIL or UNK with punctuation if applicable, or add the silence to the "word" list
-        # 2) calculate the word duration by summing the relevant phone durations
-        for word, word_phones in zip(words, phones):
-            while True:
-                align_start, align_end, transcribed_phone = preds[i]
-            
-                # if transcribed as "UNK" or "SIL"
-                if transcribed_phone == "[UNK]" or transcribed_phone == "[SIL]":
-                    # this cannot be in the middle of a word, so if our stack is non-empty, add it to the list 
-                    # this will always be treated as a "word", irrespective of whether it was punctuation or not
-                    word_durations.append(preds[i])
-                    i += 1
-                    # and if our current word was punctuation
-                    if word in self.punctuation:
-                        phone_durations.append((word_durations[-1][0], word_durations[-1][1], word))
-                        break
-                # otherwise
+        # this is a pointer to the current word/phones tuple
+        word_idx = 0
+        preds_idx = 0
+        # iterate over the aligned phones to match them to their respective source words/phones and:
+        # 1) (if applicable) replace SIL or UNK with punctuation
+        # 2) otherwise, add SIL or UNK to the list of word/phone alignments
+        # 3) calculate the word duration by summing the relevant phone durations
+        while preds_idx < len(preds):
+            # if a phone was transcribed as silence
+            if preds[preds_idx][-1] in ["[UNK]","[SIL]"]:
+                # and the current word is punctuation
+                if word_idx < len(words) and words[word_idx] in self.punctuation:
+                    # then add the punctuation to the list of aligned word/phones and advance to the next word
+                    word_durations.append([preds[preds_idx][0], preds[preds_idx][1], words[word_idx]])
+                    phone_durations.append(word_durations[-1])
+                    word_idx += 1
+                # if the previous word was punctuation 
+                elif word_idx > 0 and words[word_idx-1] in self.punctuation:
+                    # then add the duration of the silence to the phone of the previous
+                    word_durations[-1][1] = preds[preds_idx][1]
+                    phone_durations[-1] = word_durations[-1]
+                # otherwise, just add the silence to the list of aligned words/phones
                 else:
-                    word_phone_durations = []
-                    for phone in word_phones:
-                        word_phone_durations.append((preds[i][0], preds[i][1], phone))
-                        i += 1
-                    phone_durations += word_phone_durations
-                    word_start = word_phone_durations[0][0]
-                    word_end = word_phone_durations[-1][1]
-                    word_durations.append((word_start, word_end, word))        
-                    break
-        print(f"word_durations {word_durations} phone_durations {phone_durations} i {i} len preds {len(preds)} preds {preds}")
-        # this just captures any trailing silence at the end of the sentence
-        if i < len(preds):
-            assert i == len(preds) - 1
-            word_durations.append(preds[-1])
-        elif i != len(preds):
-            raise Exception()
+                    # if we:
+                    # a) encounter silence, and
+                    # b) the last phone and the next expected phone are identical, and
+                    # c) the next *aligned* phone is different),
+                    # then this means the alignment merged consecutive/repeated phones into a single aligned phone 
+                    # (e.g. (... (ii4,),(ii4,),(fuu4,)...) produced only (..., (0.5, 0.7, ii4), (0.7,0.8,SIL), (0.8,0.9,fuu4))
+                    # we therefore need to perform the same half-half allocation detailed below
+                    # we don't need to worry about multi-phone words in Chinese 
+                    if preds_idx < len(preds) - 1 and len(phone_durations) > 0:
+                        prev_phone = phone_durations[-1]
+                        next_phone = phones[word_idx][0]
+                        next_aligned = preds[preds_idx+1][-1]
+                        is_consecutive_repeated = prev_phone[-1] == next_phone 
+                        if is_consecutive_repeated and next_aligned != next_phone:
+                            start, end = prev_phone[0], prev_phone[1]
+                            duration = (end - start) / 2
+                            prev_phone[1] = start + duration
+                            word_phone_durations.append([start + duration, end, prev_phone[2]])
+                            phone_durations.append(word_phone_durations[-1])
+                            word_idx += 1
+                    # now add the silence
+                    word_durations.append(preds[preds_idx])
+                    phone_durations.append(word_durations[-1])
+                preds_idx += 1
+            # otherwise, iterate over every phone in the word at the respective index and add to the list of word phones
+            else:
+                word_phone_durations = []
+                for word_phone in phones[word_idx]: 
+                    if preds[preds_idx][-1] in ["[UNK]", "[SIL]"]:
+                        raise Exception()
+
+                    # since there are no word boundaries attached to the aligned phones, we need some way of allocating phone alignments between identical phones at the end/start of consecutive words
+                    # here, we adopt a simple solution of assigning half the aligned duration to the end phone of the last word and half to the start phone of the next phone
+                    if len(phone_durations) > 0 and word_phone == phone_durations[-1][-1]:
+                        prev_phone = phone_durations[-1]
+                        start, end = prev_phone[0], prev_phone[1]
+                        duration = (end - start) / 2
+                        prev_phone[1] = start + duration
+                        word_phone_durations.append([start + duration, end, word_phone])
+                    else:
+                        word_phone_durations.append([preds[preds_idx][0], preds[preds_idx][1], word_phone])
+                    subbed = re.sub("[0-9]", "", word_phone)
+                    
+                    if preds[preds_idx][-1] == word_phone:
+                        preds_idx += 1
+
+                phone_durations += word_phone_durations
+                word_start = word_phone_durations[0][0]
+                word_end = word_phone_durations[-1][1]
+                word_durations.append([word_start, word_end, words[word_idx]])       
+                word_idx += 1
         # when we encounter punctuation followed by [SIL], we just fold the length of the silence into the punctuation phone
         return word_durations, phone_durations       
+
+#    def align_words(self, preds, phones, words):
+#
+#        word_durations = []
+#        phone_durations = []
+#        # this is a pointer to the current position within preds
+#        i = 0
+#        # we need to iterate over the words/phones to match to their respective phone alignments and:
+#        # 1) replace SIL or UNK with punctuation if applicable, or add the silence to the "word" list
+#        # 2) calculate the word duration by summing the relevant phone durations
+#        for word, word_phones in zip(words, phones):
+#            while True:
+#                align_start, align_end, transcribed_phone = preds[i]
+#            
+#                # if transcribed as "UNK" or "SIL"
+#                if transcribed_phone == "[UNK]" or transcribed_phone == "[SIL]":
+#                    # this cannot be in the middle of a word, so if our stack is non-empty, add it to the list 
+#                    # this will always be treated as a "word", irrespective of whether it was punctuation or not
+#                    word_durations.append(preds[i])
+#                    i += 1
+#                    # and if our current word was punctuation
+#                    if word in self.punctuation:
+#                        phone_durations.append((word_durations[-1][0], word_durations[-1][1], word))
+#                        break
+#                # otherwise
+#                else:
+#                    word_phone_durations = []
+#                    for phone in word_phones:
+#                        word_phone_durations.append((preds[i][0], preds[i][1], phone))
+#                        i += 1
+#                    phone_durations += word_phone_durations
+#                    word_start = word_phone_durations[0][0]
+#                    word_end = word_phone_durations[-1][1]
+#                    word_durations.append((word_start, word_end, word))        
+#                    break
+#        print(f"word_durations {word_durations} phone_durations {phone_durations} i {i} len preds {len(preds)} preds {preds}")
+#        # this just captures any trailing silence at the end of the sentence
+#        if i < len(preds):
+#            assert i == len(preds) - 1
+#            word_durations.append(preds[-1])
+#        elif i != len(preds):
+#            raise Exception()
+#        # when we encounter punctuation followed by [SIL], we just fold the length of the silence into the punctuation phone
+#        return word_durations, phone_durations       
         
 
 
