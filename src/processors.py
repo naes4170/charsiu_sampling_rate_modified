@@ -110,7 +110,7 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
         self.g2p = G2p()
         self.sil = '[SIL]'
         self.sil_idx = self.mapping_phone2id(self.sil)
-        self.punctuation = set('.,!?')
+        self.punctuation = set('.,!?\'":;-')
 
     def get_phones_and_words(self,sen):
         '''
@@ -235,6 +235,8 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
         # this is a pointer to the current word/phones tuple
         word_idx = 0
         preds_idx = 0
+        preds = [list(x) for x in preds]
+        print(preds)
         # iterate over the aligned phones to match them to their respective source words/phones and:
         # 1) replace SIL or UNK with punctuation if applicable, or add the silence to the "word" list
         # 2) calculate the word duration by summing the relevant phone durations
@@ -244,42 +246,84 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
                 # and the word at the respective index is punctuation
                 if word_idx < len(words) and words[word_idx] in self.punctuation:
                     word_durations.append([preds[preds_idx][0], preds[preds_idx][1], words[word_idx]])
+                    phone_durations.append(word_durations[-1].copy())
+                    # if the previous word was punctuation, the start of this phone can sometimes be before the end of the last phone
+                    if word_idx > 0:
+                        if word_durations[-2][2] in self.punctuation and word_durations[-2][1] > word_durations[-1][0]:
+                            start, end = word_durations[-2][0], word_durations[-1][1]
+                            dur = (end - start) / 2
+                            word_durations[-2][0] = start
+                            word_durations[-2][1] = start + dur
+                            phone_durations[-2][0] = start 
+                            phone_durations[-2][1] = start + dur
+                            phone_durations[-1][0] = start + dur
+                            phone_durations[-1][1] = end
+                            word_durations[-1][0] = start + dur
+                            word_durations[-1][1] = end
                     word_idx += 1
-                    phone_durations.append(word_durations[-1])
                 # or the last word was punctuation 
                 elif word_idx > 0 and words[word_idx-1] in self.punctuation:
                     # then assign all the silence to the punctuation
                     word_durations[-1][1] = preds[preds_idx][1]
+                    phone_durations[-1][1] = preds[preds_idx][1]
                 else:
-                    word_durations.append(preds[preds_idx])
-                    phone_durations.append(word_durations[-1])
+                    word_durations.append(list(preds[preds_idx]))
+                    phone_durations.append(word_durations[-1].copy())
                 preds_idx += 1
             # otherwise, iterate over every phone in the word at the respective index and add to the list of word phones
             else:
                 word_phone_durations = []
-                for word_phone in phones[word_idx]: 
-                    if preds[preds_idx][-1] in ["[UNK]", "[SIL]"]:
-                        raise Exception()
+                if word_idx >= len(phones):
+                    print(phone_durations)
+                    print(f"preds_idx is {preds_idx}, pred is {preds[preds_idx]}")
+                    raise Exception()
 
+                for word_phone_index, word_phone in enumerate(phones[word_idx]): 
+                    if preds[preds_idx][-1] in ["[UNK]", "[SIL]"]:
+                        # this is silence in the middle of a word
+                        # adjust the start time of  the next prediction and skip
+                        if preds_idx < len(preds) - 1:
+                            preds[preds_idx+1][0] = preds[preds_idx][0]
+                            preds_idx += 1
+                        else:
+                            break
+
+                    if words[word_idx] in self.punctuation:
+                        # means there was punctuation that wasn't aligned properly
+                        # allocate half of the last alignment
+                        start, end = word_durations[-1][0], word_durations[-1][1]
+                        dur = (end - start) / 2
+                        word_durations[-1][1] = start + dur
+                        phone_durations[-1][1] = word_durations[-1][1]
+                        word_phone_durations += [[start + dur, end, words[word_idx]]]
+                        break
                     # since there are no word boundaries attached to the aligned phones, we need some way of allocating phone alignments between identical phones at the end/start of consecutive words
-                    # here, we adopt a simple solution of assigning half the aligned duration to the end phone of the last word and hafl to the start phone of the next phone
-                    if word_phone == phone_durations[-1][-1]:
-                        prev_phone = phone_durations[-1]
-                        start, end = prev_phone[0], prev_phone[1]
+                    # here, we adopt a simple solution of assigning half the aligned duration to the end phone of the last word and half to the start phone of the next phone
+                    if len(phone_durations) > 0 and word_phone_index == 0 and re.sub("[0-9]", "", word_phone) == re.sub("[0-9]", "", phone_durations[-1][2]):
+                        start, end = phone_durations[-1][0], phone_durations[-1][1]
                         duration = (end - start) / 2
-                        prev_phone[1] = start + duration
+                        phone_durations[-1][1] = start + duration
+                        word_durations[-1][1] = start + duration
                         word_phone_durations.append([start + duration, end, word_phone])
+                    #    print(f"boundary {word_phone_durations[-1]}")
                     else:
-                        word_phone_durations.append([preds[preds_idx][0], preds[preds_idx][1], word_phone])
+                        # if a word has repeated phones, but nly one alignment, we allocate equally
+                        if len(word_phone_durations) > 0 and word_phone == word_phone_durations[-1][2] and word_phone != preds[preds_idx][2]:
+                            start, end = word_phone_durations[-1][0], word_phone_durations[-1][1]
+                            dur = (end - start) / 2
+                            word_phone_durations[-1][1] = start + dur
+                            word_phone_durations.append([start + dur, end, word_phone])
+                            #preds_idx += 1
+                        else:
+                            word_phone_durations.append([preds[preds_idx][0], preds[preds_idx][1], word_phone])
+                            #print(f"added simple {word_phone_durations[-1]} when pred was {preds[preds_idx]}")
                     if preds[preds_idx][-1] == re.sub("[0-9]", "", word_phone):
                         preds_idx += 1
                 phone_durations += word_phone_durations
                 word_start = word_phone_durations[0][0]
                 word_end = word_phone_durations[-1][1]
                 word_durations.append([word_start, word_end, words[word_idx]])       
-
                 word_idx += 1
-        # when we encounter punctuation followed by [SIL], we just fold the length of the silence into the punctuation phone
         return word_durations, phone_durations       
 
 '''
@@ -301,6 +345,8 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         self.consonant_list = set(['b', 'p', 'm', 'f', 'd', 't', 'n', 'l', 'g', 'k',
                   'h', 'j', 'q', 'x', 'zh', 'ch', 'sh', 'r', 'z',
                   'c', 's'])
+        self.number_map = {0: '零', 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八', 9: '九', 10: '十'}
+        self.teens_map = {11: '十一', 12: '十二', 13: '十三', 14: '十四', 15: '十五', 16: '十六', 17: '十七', 18: '十八', 19: '十九'}
 
         self.transform_dict = {'ju':'jv', 'qu':'qv', 'xu':'xv','jue':'jve',
                           'que':'qve', 'xue':'xve','quan':'qvan',
@@ -328,7 +374,38 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                               'ueng1':('u1','eng1'),'ueng2':('u2','eng2'),'ueng3':('u3','eng3'),
                               'ueng4':('u4','eng4'),'ueng5':('u5','eng5'),'io5':('i5','o5'),
                               'io4':('i4','o4'),'io1':('i1','o1')}
-        
+    def num_to_pinyin(self, num_str):
+        num = int(num_str)
+        if num < 11:
+            return self.number_map[num]
+        elif 10 < num < 20:
+            return self.teens_map[num]
+        else:
+            thousands = num // 1000
+            hundreds = (num % 1000) // 100
+            tens = (num % 100) // 10
+            ones = num % 10
+            result = ''
+            if thousands > 0:
+                result += self.number_map[thousands] + '千'
+                if hundreds == 0 and (tens > 0 or ones > 0):
+                    result += '零'
+            if hundreds > 0:
+                result += self.number_map[hundreds] + '百'
+                if tens == 0 and ones > 0:
+                    result += '零'
+            if tens > 0:
+                if tens == 1 and thousands == 0 and hundreds == 0:
+                    result += '十'
+                else:
+                    result += self.number_map[tens] + '十'
+            if ones > 0:
+                result += self.number_map[ones]
+            return result
+    
+    def convert_numbers_to_pinyin(self, text):
+        return re.sub(r'\d+', lambda x: self.num_to_pinyin(x.group()), text) 
+   
     def get_phones_and_words(self,sen):
         '''
         Convert texts to phone sequence
@@ -350,6 +427,8 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # sen is a plain string of Chinese (possibly containing punctuation, including whitespace)
         # first, strip the whitespace because we don't need it
         sen = sen.strip().replace(" ", "") 
+        sen = self.convert_numbers_to_pinyin(sen + "30")
+        
         # then, call G2P to phones (numeric pinyin)
         phones = self.g2p(sen.strip())
         aligned_phones = []
@@ -460,7 +539,9 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # 1) (if applicable) replace SIL or UNK with punctuation
         # 2) otherwise, add SIL or UNK to the list of word/phone alignments
         # 3) calculate the word duration by summing the relevant phone durations
+        print(phones)
         while preds_idx < len(preds):
+            print(f"pred is {preds[preds_idx]}, word is {words[word_idx]}")
             # if a phone was transcribed as silence
             if preds[preds_idx][-1] in ["[UNK]","[SIL]"]:
                 # and the current word is punctuation
@@ -503,6 +584,12 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
             # otherwise, iterate over every phone in the word at the respective index and add to the list of word phones
             else:
                 word_phone_durations = []
+                if word_idx >= len(phones):
+                    print(f"phones {phones}")
+                    print(f"words {words}")
+                    raise Exception()
+                elif words[word_idx] in self.punctuation:
+                    raise Exception()
                 for word_phone in phones[word_idx]: 
                     if preds[preds_idx][-1] in ["[UNK]", "[SIL]"]:
                         raise Exception()
@@ -511,7 +598,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                     # here, we adopt a simple solution of assigning half the aligned duration to the end phone of the last word and half to the start phone of the next phone
                     if len(phone_durations) > 0 and word_phone == phone_durations[-1][-1]:
                         prev_phone = phone_durations[-1]
-                        start, end = prev_phone[0], prev_phone[1]
+                        start, end = prev_phone[0], preds[preds_idx][1]
                         duration = (end - start) / 2
                         prev_phone[1] = start + duration
                         word_phone_durations.append([start + duration, end, word_phone])

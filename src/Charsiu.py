@@ -148,12 +148,32 @@ class charsiu_forced_aligner(charsiu_aligner):
             raise Exception("No speech detected! Please check the audio file!")
         
         aligned_phone_ids = forced_align(cost[nonsil_idx,:],phone_ids[1:-1])
-        
         aligned_phones = [self.charsiu_processor.mapping_id2phone(phone_ids[1:-1][i]) for i in aligned_phone_ids]
-        pred_phones = self._merge_silence(aligned_phones,sil_mask)
-        
+        pred_phones = self._merge_silence(aligned_phones,sil_mask) 
         pred_phones = seq2duration(pred_phones,resolution=self.resolution)
         pred_words, pred_phones = self.charsiu_processor.align_words(pred_phones,phones,words)
+        print(pred_words)
+        print(pred_phones)
+        # check that the sum of all phone lengths matches the audio length (accurate to 1 frame/10ms)
+        total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
+        total_audio_length = audio.size(-1) / 16000
+        diff = total_alignment_length - total_audio_length
+        # if the difference is only 20ms, resize the last alignment accordingly
+        if diff < 0:
+            if diff < 0.02:
+                add_secs = abs(diff) 
+                pred_phones[-1][1] += add_secs
+                pred_words[-1][1] += add_secs
+            else:
+                raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
+#        elif diff > 0.02:
+#            raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
+        # check that each alignment is monotonically increasing
+#        start = 0
+#        for p in pred_phones:
+#            assert p[0] >= start, f"Expected alignment to start at the end of the last phone ({p}) in list {pred_phones}"
+#            start = p[1]
+
         return pred_phones, pred_words
     
     
@@ -296,7 +316,17 @@ class charsiu_attention_aligner(charsiu_aligner):
         preds = torch.argmax(att[0],dim=-1).cpu().detach().squeeze().numpy()
         pred_phones = [self.charsiu_processor.mapping_id2phone(phone_ids[i]) for i in preds]
         pred_phones = seq2duration(pred_phones,resolution=self.resolution)
-            
+
+        # check that the sum of all phone lengths matches the audio length (to 10ms)
+        total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
+        total_audio_length = audio.size(-1) / 16000
+        assert total_alignment_length - total_audio_length < 0.01
+        print(f"total_alignment_length {total_alignment_length} total_audio_length {total_audio_length}")
+        # check that each alignment is monotonically increasing
+        start = 0
+        for p in pred_phones:
+            assert p[0] >= start
+            start = p[1]
         return pred_phones    
     
     def serve(self,audio,text,save_to,output_format='textgrid'):
@@ -482,6 +512,17 @@ class charsiu_chain_forced_aligner(charsiu_aligner):
         
         aligned_phones = [self.charsiu_processor.mapping_id2phone(phone_ids[i]) for i in aligned_phone_ids]
         pred_phones = seq2duration(aligned_phones,resolution=self.resolution)
+        # check that the sum of all phone lengths matches the audio length (to 10ms)
+        total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
+        total_audio_length = audio.size(-1) / 16000
+        assert total_alignment_length - total_audio_length < 0.01
+        print(f"total_alignment_length {total_alignment_length} total_audio_length {total_audio_length}")
+        # check that each alignment is monotonically increasing
+        start = 0
+        for p in pred_phones:
+            assert p[0] >= start
+            start = p[1]
+
         return pred_phones
     
     

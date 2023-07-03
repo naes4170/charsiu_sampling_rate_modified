@@ -69,13 +69,15 @@ def seq2duration(phones,resolution=0.01,min_duration=0):
     out = []
     for p,group in groupby(phones):
         length = len(list(group))
+        # each entry in the list of aligned frames must reached a min duration before being added to the output list
         if length >= min_duration: 
+            # if the current and last phones were silence, combine the two phones together into a single silence phone
             if len(out) > 0 and p == "[SIL]" and out[-1][2] == "[SIL]":
                 replaced = (out[-1][0], round((counter+length)*resolution,2),out[-1][2])
                 out[-1] = replaced
             else:
                 out.append((round(counter*resolution,2),round((counter+length)*resolution,2),p))
-            
+        # if the first aligned phone does not reach the min duration, replace with silence
         elif len(out) == 0:
             out.append((round(counter*resolution,2),round((counter+length)*resolution,2),"[SIL]"))
         else:
@@ -317,7 +319,6 @@ def forced_align(cost, phone_ids):
 
     align_seq = [-1 for i in range(max(align[:,0])+1)]
     for i in list(align):
-    #    print(align)
         if align_seq[i[0]]<i[1]:
             align_seq[i[0]]=i[1]
 
