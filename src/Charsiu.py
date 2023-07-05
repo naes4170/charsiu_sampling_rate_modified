@@ -114,7 +114,7 @@ class charsiu_forced_aligner(charsiu_aligner):
         self._freeze_model()
         
         
-    def align(self, audio, text):
+    def align(self, audio, text, exception_on_mismatch=True):
         '''
         Perform forced alignment
 
@@ -158,21 +158,23 @@ class charsiu_forced_aligner(charsiu_aligner):
         total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
         total_audio_length = audio.size(-1) / 16000
         diff = total_alignment_length - total_audio_length
-        # if the difference is only 20ms, resize the last alignment accordingly
+        # if the difference is only 30ms, resize the last alignment accordingly
         if diff < 0:
-            if diff < 0.02:
+            if diff < 0.03:
                 add_secs = abs(diff) 
                 pred_phones[-1][1] += add_secs
                 pred_words[-1][1] += add_secs
             else:
-                raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
-#        elif diff > 0.02:
-#            raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
-        # check that each alignment is monotonically increasing
-#        start = 0
-#        for p in pred_phones:
-#            assert p[0] >= start, f"Expected alignment to start at the end of the last phone ({p}) in list {pred_phones}"
-#            start = p[1]
+                if exception_on_mismatch:
+                    raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
+        elif diff > 0.03 and exception_on_mismatch:
+            raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
+        if exception_on_mismatch:
+            # check that each alignment is monotonically increasing
+            start = 0
+            for p in pred_phones:
+                assert p[0] >= start, f"Expected alignment to start at the end of the last phone ({p}) in list {pred_phones}"
+                start = p[1]
 
         return pred_phones, pred_words
     
