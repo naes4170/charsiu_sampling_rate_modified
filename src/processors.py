@@ -267,6 +267,7 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
                     word_durations[-1][1] = preds[preds_idx][1]
                     phone_durations[-1][1] = preds[preds_idx][1]
                 else:
+                    print(f"appended {preds[preds_idx]}")
                     word_durations.append(list(preds[preds_idx]))
                     phone_durations.append(word_durations[-1].copy())
                 preds_idx += 1
@@ -307,7 +308,7 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
                         word_phone_durations.append([start + duration, end, word_phone])
                     #    print(f"boundary {word_phone_durations[-1]}")
                     else:
-                        # if a word has repeated phones, but nly one alignment, we allocate equally
+                        # if a word has repeated phones, but only one alignment, we allocate equally
                         if len(word_phone_durations) > 0 and word_phone == word_phone_durations[-1][2] and word_phone != preds[preds_idx][2]:
                             start, end = word_phone_durations[-1][0], word_phone_durations[-1][1]
                             dur = (end - start) / 2
@@ -316,7 +317,17 @@ class CharsiuPreprocessor_en(CharsiuPreprocessor):
                             #preds_idx += 1
                         else:
                             word_phone_durations.append([preds[preds_idx][0], preds[preds_idx][1], word_phone])
-                            #print(f"added simple {word_phone_durations[-1]} when pred was {preds[preds_idx]}")
+                                                                       
+                            print(f"added simple {word_phone_durations[-1]} when pred was {preds[preds_idx]}")
+                            if word_phone_index == len(phones[word_idx]) - 1 and word_phone == phones[word_idx+1][0] and  preds[preds_idx+1] != phones[word_idx+1][0]:
+                                phone_start, phone_end = word_phone_durations[-1][0], word_phone_durations[-1][1]
+                                phone_dur = (phone_end - phone_start) / 2
+                                word_phone_durations[-1][1] = phone_start + phone_dur
+                                phone_durations += word_phone_durations
+                                word_durations.append([word_phone_durations[0][0], phone_start + phone_dur, words[word_idx]])       
+                                word_idx += 1 
+                                word_phone_durations = [ [ phone_start+phone_dur, phone_end, phones[word_idx][0] ] ]
+                                print(f"added repeated {word_phone_durations[-1]} when pred was {preds[preds_idx]}")
                     if preds[preds_idx][-1] == re.sub("[0-9]", "", word_phone):
                         preds_idx += 1
                 phone_durations += word_phone_durations
@@ -539,9 +550,9 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # 1) (if applicable) replace SIL or UNK with punctuation
         # 2) otherwise, add SIL or UNK to the list of word/phone alignments
         # 3) calculate the word duration by summing the relevant phone durations
-        print(phones)
+#        print(phones)
         while preds_idx < len(preds):
-            print(f"pred is {preds[preds_idx]}, word is {words[word_idx]}")
+#            print(f"pred is {preds[preds_idx]}, word is {words[word_idx]}")
             # if a phone was transcribed as silence
             if preds[preds_idx][-1] in ["[UNK]","[SIL]"]:
                 # and the current word is punctuation
@@ -578,7 +589,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                             phone_durations.append(word_phone_durations[-1])
                             word_idx += 1
                     # now add the silence
-                    word_durations.append(preds[preds_idx])
+                    word_durations.append(list(preds[preds_idx]))
                     phone_durations.append(word_durations[-1])
                 preds_idx += 1
             # otherwise, iterate over every phone in the word at the respective index and add to the list of word phones
