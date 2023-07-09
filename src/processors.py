@@ -438,7 +438,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # sen is a plain string of Chinese (possibly containing punctuation, including whitespace)
         # first, strip the whitespace because we don't need it
         sen = sen.strip().replace(" ", "") 
-        sen = self.convert_numbers_to_pinyin(sen + "30")
+        sen = self.convert_numbers_to_pinyin(sen)
         
         # then, call G2P to phones (numeric pinyin)
         phones = self.g2p(sen.strip())
