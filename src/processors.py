@@ -550,16 +550,14 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
         # 1) (if applicable) replace SIL or UNK with punctuation
         # 2) otherwise, add SIL or UNK to the list of word/phone alignments
         # 3) calculate the word duration by summing the relevant phone durations
-#        print(phones)
         while preds_idx < len(preds):
-#            print(f"pred is {preds[preds_idx]}, word is {words[word_idx]}")
             # if a phone was transcribed as silence
             if preds[preds_idx][-1] in ["[UNK]","[SIL]"]:
                 # and the current word is punctuation
                 if word_idx < len(words) and words[word_idx] in self.punctuation:
                     # then add the punctuation to the list of aligned word/phones and advance to the next word
                     word_durations.append([preds[preds_idx][0], preds[preds_idx][1], words[word_idx]])
-                    phone_durations.append(word_durations[-1])
+                    phone_durations.append(list(word_durations[-1]))
                     word_idx += 1
                 # if the previous word was punctuation 
                 elif word_idx > 0 and words[word_idx-1] in self.punctuation:
@@ -586,11 +584,11 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                             duration = (end - start) / 2
                             prev_phone[1] = start + duration
                             word_phone_durations.append([start + duration, end, prev_phone[2]])
-                            phone_durations.append(word_phone_durations[-1])
+                            phone_durations.append(list(word_phone_durations[-1]))
                             word_idx += 1
                     # now add the silence
                     word_durations.append(list(preds[preds_idx]))
-                    phone_durations.append(word_durations[-1])
+                    phone_durations.append(list(word_durations[-1]))
                 preds_idx += 1
             # otherwise, iterate over every phone in the word at the respective index and add to the list of word phones
             else:
@@ -620,7 +618,7 @@ class CharsiuPreprocessor_zh(CharsiuPreprocessor_en):
                     if preds[preds_idx][-1] == word_phone:
                         preds_idx += 1
 
-                phone_durations += word_phone_durations
+                phone_durations += list(word_phone_durations)
                 word_start = word_phone_durations[0][0]
                 word_end = word_phone_durations[-1][1]
                 word_durations.append([word_start, word_end, words[word_idx]])       
