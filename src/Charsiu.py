@@ -159,16 +159,14 @@ class charsiu_forced_aligner(charsiu_aligner):
         total_audio_length = audio.size(-1) / 16000
         diff = total_alignment_length - total_audio_length
         # if the difference is only 30ms, resize the last alignment accordingly
-        if diff < 0:
-            if diff < 0.03:
-                add_secs = abs(diff) 
-                pred_phones[-1][1] += add_secs
-                pred_words[-1][1] += add_secs
-            else:
-                if exception_on_mismatch:
-                    raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
-        elif diff > 0.03 and exception_on_mismatch:
+        if abs(diff) > 0.03 and exception_on_mismatch:
             raise Exception(f"Mismatch between alignment length ({total_alignment_length}) and audio length {total_audio_length}")
+
+        if diff != 0:
+            print(f"Adding {diff} to compensate for difference")
+            pred_phones[-1][1] -= diff
+            pred_words[-1][1] -= diff
+
         if exception_on_mismatch:
             # check that each alignment is monotonically increasing
             start = 0
