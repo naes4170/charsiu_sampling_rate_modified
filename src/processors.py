@@ -95,7 +95,7 @@ class CharsiuPreprocessor:
             features = audio
         else:
             raise Exception('The input must be a path or a numpy array!')
-        return self.processor(features, sampling_rate=16000,return_tensors='pt').input_values.squeeze()
+        return self.processor(features, sampling_rate=44100,return_tensors='pt').input_values.squeeze()
 
 '''
 English g2p processor
