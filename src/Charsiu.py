@@ -19,7 +19,7 @@ class charsiu_aligner:
     
     def __init__(self, 
                  lang='en', 
-                 sampling_rate=16000, 
+                 sampling_rate=44100, 
                  device=None,
                  recognizer=None,
                  processor=None, 
