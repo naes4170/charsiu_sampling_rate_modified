@@ -156,7 +156,7 @@ class charsiu_forced_aligner(charsiu_aligner):
         print(pred_phones)
         # check that the sum of all phone lengths matches the audio length (accurate to 1 frame/10ms)
         total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
-        total_audio_length = audio.size(-1) / 16000
+        total_audio_length = audio.size(-1) / 44100
         diff = total_alignment_length - total_audio_length
         # if the difference is only 30ms, resize the last alignment accordingly
         if abs(diff) > 0.03 and exception_on_mismatch:
@@ -319,7 +319,7 @@ class charsiu_attention_aligner(charsiu_aligner):
 
         # check that the sum of all phone lengths matches the audio length (to 10ms)
         total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
-        total_audio_length = audio.size(-1) / 16000
+        total_audio_length = audio.size(-1) / 44100
         assert total_alignment_length - total_audio_length < 0.01
         print(f"total_alignment_length {total_alignment_length} total_audio_length {total_audio_length}")
         # check that each alignment is monotonically increasing
@@ -514,7 +514,7 @@ class charsiu_chain_forced_aligner(charsiu_aligner):
         pred_phones = seq2duration(aligned_phones,resolution=self.resolution)
         # check that the sum of all phone lengths matches the audio length (to 10ms)
         total_alignment_length = sum([x[1] - x[0] for x in pred_phones])
-        total_audio_length = audio.size(-1) / 16000
+        total_audio_length = audio.size(-1) / 44100
         assert total_alignment_length - total_audio_length < 0.01
         print(f"total_alignment_length {total_alignment_length} total_audio_length {total_audio_length}")
         # check that each alignment is monotonically increasing
